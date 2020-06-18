@@ -27,6 +27,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         img, target = self.prepare(img, target)
         if self._transforms is not None:
             img, target = self._transforms(img, target)
+
         return img, target
 
 
@@ -145,7 +146,7 @@ def make_coco_transforms(image_set):
 
 
 def build(image_set, args):
-    root = Path(args.coco_path)
+    root = Path(args.data_path)
     assert root.exists(), f'provided COCO path {root} does not exist'
     mode = 'instances'
     PATHS = {

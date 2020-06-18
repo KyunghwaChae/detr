@@ -80,7 +80,7 @@ def get_args_parser():
 
     # dataset parameters
     parser.add_argument('--dataset_file', default='coco')
-    parser.add_argument('--coco_path', type=str)
+    parser.add_argument('--data_path', type=str)
     parser.add_argument('--coco_panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
 
@@ -182,10 +182,10 @@ def main(args):
             args.start_epoch = checkpoint['epoch'] + 1
 
     if args.eval:
-        test_stats, coco_evaluator = evaluate(model, criterion, postprocessors,
+        test_stats, evaluator = evaluate(model, criterion, postprocessors,
                                               data_loader_val, base_ds, device, args.output_dir)
         if args.output_dir:
-            utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
+            utils.save_on_master(evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
         return
 
     print("Start training")
@@ -211,7 +211,7 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
 
-        test_stats, coco_evaluator = evaluate(
+        test_stats, evaluator = evaluate(
             model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
         )
 
@@ -225,14 +225,14 @@ def main(args):
                 f.write(json.dumps(log_stats) + "\n")
 
             # for evaluation logs
-            if coco_evaluator is not None:
+            if evaluator is not None:
                 (output_dir / 'eval').mkdir(exist_ok=True)
-                if "bbox" in coco_evaluator.coco_eval:
+                if "bbox" in evaluator.coco_eval:
                     filenames = ['latest.pth']
                     if epoch % 50 == 0:
                         filenames.append(f'{epoch:03}.pth')
                     for name in filenames:
-                        torch.save(coco_evaluator.coco_eval["bbox"].eval,
+                        torch.save(evaluator.coco_eval["bbox"].eval,
                                    output_dir / "eval" / name)
 
     total_time = time.time() - start_time
