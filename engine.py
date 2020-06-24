@@ -10,9 +10,9 @@ from typing import Iterable
 import torch
 
 import util.misc as utils
+from util.io import wandb_log_image
 from datasets.coco_eval import CocoEvaluator
 from datasets.panoptic_eval import PanopticEvaluator
-from util.plot_utils import plot_image
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
@@ -24,7 +24,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('class_error', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 10
+    print_freq = 20
 
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
@@ -76,7 +76,6 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
     iou_types = tuple(k for k in ('segm', 'bbox') if k in postprocessors.keys())
     coco_evaluator = CocoEvaluator(base_ds, iou_types)
-    # coco_evaluator.coco_eval[iou_types[0]].params.iouThrs = [0, 0.1, 0.5, 0.75]
 
     panoptic_evaluator = None
     if 'panoptic' in postprocessors.keys():
@@ -86,6 +85,12 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             output_dir=os.path.join(output_dir, "panoptic_eval"),
         )
 
+    # select 50 random images to visualize
+    dataset = data_loader.dataset
+    classes = {cat["id"]: cat["name"] for cat in dataset.coco.dataset["categories"]}
+    perm = torch.randperm(len(dataset))[:50].tolist()
+    vis_idx = torch.tensor(dataset.ids)[perm].tolist()
+
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
@@ -93,7 +98,6 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         outputs = model(samples)
         loss_dict = criterion(outputs, targets)
         weight_dict = criterion.weight_dict
-
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
@@ -108,6 +112,17 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         results = postprocessors['bbox'](outputs, orig_target_sizes)
+
+        # log images to wandb
+        if output_dir:
+            for tar, logits, boxes in zip(targets, outputs["pred_logits"], outputs["pred_boxes"]):
+                if tar["image_id"] in vis_idx and utils.is_main_process():
+                    pred = {"pred_logits": logits, "pred_boxes": boxes}
+                    name = dataset.coco.imgs[tar["image_id"].item()]["file_name"]
+                    path = os.path.join(dataset.root, name)
+                    tag = tar["image_id"]
+                    wandb_log_image(classes, path, tar, pred, str(tag.item()))
+
         if 'segm' in postprocessors.keys():
             target_sizes = torch.stack([t["size"] for t in targets], dim=0)
             results = postprocessors['segm'](results, outputs, orig_target_sizes, target_sizes)
@@ -124,6 +139,9 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
                 res_pano[i]["file_name"] = file_name
 
             panoptic_evaluator.update(res_pano)
+
+    # storage = metric_logger.storage
+    # for img, tar, logits, boxes in zip(storage["images"], storage["targets"], storage["results"], storage["logits"], storage["boxes"]):
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()

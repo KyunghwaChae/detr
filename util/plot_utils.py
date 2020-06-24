@@ -2,14 +2,13 @@
 """
 Plotting utilities to visualize training logs.
 """
+import matplotlib.colors as mplc
+import numpy as np
 import torch
 import pandas as pd
 from pathlib import Path
 import seaborn as sns
 import matplotlib.pyplot as plt
-from kornia import denormalize
-import cv2
-import numpy as np
 
 from util.box_ops import box_cxcywh_to_xyxy
 
@@ -68,17 +67,3 @@ def plot_precision_recall(files, naming_scheme='iter'):
     axs[1].set_title('Scores / Recall')
     axs[1].legend(names)
     return fig, axs
-
-def plot_image(image, bbox):
-
-    img = denormalize(image, mean=torch.tensor([0.485, 0.456, 0.406]), std=torch.tensor([0.229, 0.224, 0.225]))
-    img = (img.permute(1, 2, 0).cpu().numpy() * 255).astype("uint8")
-    bbox = box_cxcywh_to_xyxy(bbox)
-
-    img_w, img_h = img.shape[1], img.shape[0]
-    bbox.mul_(torch.tensor([img_w, img_h, img_w, img_h], device=bbox.device))
-    x1, y1, x2, y2 = bbox
-
-    img = cv2.rectangle(np.ascontiguousarray(img), (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-    cv2.imshow("1", img[..., ::-1])
-    cv2.waitKey(0)

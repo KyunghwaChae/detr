@@ -64,19 +64,24 @@ class LogoDetection(torchvision.datasets.CocoDetection):
 
         super(LogoDetection, self).__init__(img_folder, None)
         self._transforms = transforms
+        self.class_names = CLASS_NAMES
+        self.root = img_folder
+        self.prepare = ConvertCocoPolysToMask(False)
+        self.coco.dataset["annotations"] = []
 
         fileids = np.loadtxt(split_set, dtype=np.str)
 
         instances = []
         ids = []
         files = []
-        for fileid in tqdm.tqdm(fileids, desc='Reading annotations'):
+        n_anns = 0
+        for i, fileid in enumerate(tqdm.tqdm(fileids, desc='Reading annotations')):
             anno_file = os.path.join(ann_folder, fileid + ".xml")
             jpeg_file = os.path.join(img_folder, fileid + ".jpg")
 
             tree = ET.parse(anno_file)
 
-            ids.append(hash(fileid))
+            ids.append(i)
             files.append(jpeg_file)
 
             annotations = []
@@ -88,38 +93,54 @@ class LogoDetection(torchvision.datasets.CocoDetection):
                 bbox[0] -= 1.0
                 bbox[1] -= 1.0
 
-                category_id = CLASS_NAMES.index(cls)
+                category_id = self.class_names.index(cls)
 
                 bbox[2], bbox[3] = bbox[2] - bbox[0], bbox[3] - bbox[1]
                 meta = {
                     "bbox": bbox,
                     "category_id": category_id,
-                    "area": bbox[2] * bbox[3]
+                    "area": bbox[2] * bbox[3],
+                    "id": n_anns,
+                    "iscrowd": 0,
                 }
+                n_anns += 1
+                self.coco.dataset["annotations"].append({**meta, "image_id": i})
                 annotations.append(meta)
             instances.append(annotations)
 
-
-        self.instances = instances
-        self.prepare = ConvertCocoPolysToMask(False)
-        self.files = files
         self.ids = ids
 
-    def __len__(self):
-        return len(self.instances)
+        list_categories = []
+        for i, cat in enumerate(self.class_names):
+            categories = {}
+            categories["id"] = i
+            categories["name"] = cat
+            categories["supercategory"] = "logo"
+            list_categories.append(categories)
+
+        self.coco.dataset["categories"] = list_categories
+
+        list_images = []
+        for name, img_id in zip(files, ids):
+            images = {}
+            images["file_name"] = name.split("/")[-1]
+            images["id"] = img_id
+            list_images.append(images)
+
+        self.coco.dataset["images"] = list_images
+        self.coco.createIndex()
+
 
     def __getitem__(self, idx):
 
-        img = Image.open(self.files[idx]).convert("RGB")
+        img, target = super(LogoDetection, self).__getitem__(idx)
         image_id = self.ids[idx]
-        target = self.instances[idx]
         target = {'image_id': image_id, 'annotations': target}
         img, target = self.prepare(img, target)
-
         if self._transforms is not None:
             img, target = self._transforms(img, target)
-        return img, target
 
+        return img, target
 
 
 def build(image_set, args):

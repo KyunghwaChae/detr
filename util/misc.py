@@ -175,6 +175,7 @@ class MetricLogger(object):
         raise AttributeError("'{}' object has no attribute '{}'".format(
             type(self).__name__, attr))
 
+
     def __str__(self):
         loss_str = []
         for name, meter in self.meters.items():
@@ -361,10 +362,6 @@ def get_rank():
 def is_main_process():
     return get_rank() == 0
 
-
-def save_on_master(*args, **kwargs):
-    if is_main_process():
-        torch.save(*args, **kwargs)
 
 
 def init_distributed_mode(args):
