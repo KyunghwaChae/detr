@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import wandb
 from PIL import Image
 from util.misc import is_main_process
-from util.box_ops import box_cxcywh_to_xyxy
 
 
 def save_on_master(*args, **kwargs):
@@ -68,19 +67,27 @@ def load_frozen(args, model):
     model.detr.load_state_dict(checkpoint['model'])
 
 
-def wandb_log_image(classes, img_path, target, preds, tag):
+def wandb_log_image(classes, img_path, target, preds, step):
 
     prob = F.softmax(preds["pred_logits"], -1)
     scores, labels = prob[..., :-1].max(-1)
     img = Image.open(img_path)
 
-    pred_boxes = box_cxcywh_to_xyxy(preds["pred_boxes"])
     boxes_data = []
-    for sc, cl, (xmin, ymin, xmax, ymax) in zip(scores, labels, pred_boxes.tolist()):
-        boxes_data.append({"position": {"minX": xmin, "maxX": xmax, "minY": ymin, "maxY": ymax},
-                           "box_caption": f"{classes[cl.item()]}: {sc:0.2f}",
-                           # "domain": "pixel",
-                           "class_id": cl.item(), "scores": {"score": sc.item()}})
+    for sc, cl, (cx, cy, width, height) in zip(scores.tolist(), labels.tolist(), preds["pred_boxes"].tolist()):
+        boxes_data.append({"position": {"middle": (cx, cy), "width": width, "height": height},
+                           "box_caption": f"{classes[cl]}: {sc:0.2f}",
+                           "class_id": cl, "scores": {"score": sc}})
 
-    img = wandb.Image(img, boxes={"predictions": {"box_data": boxes_data, "class_labels": classes}})
-    wandb.log({tag: img})
+    gt_data = []
+    for cl, (cx, cy, width, height) in zip(target["labels"].tolist(), target["boxes"].tolist()):
+
+        gt_data.append({"position": {"middle": (cx, cy), "width": width, "height": height},
+                        "box_caption": f"{classes[cl]}",
+                        "class_id": cl})
+
+    boxes = {"predictions": {"box_data": boxes_data, "class_labels": classes}}
+    boxes["ground_truth"] = {"box_data": gt_data, "class_labels": classes}
+
+    img = wandb.Image(img, boxes=boxes)
+    wandb.log({"Image: " + str(target["image_id"].item()): img}, step=step)

@@ -202,7 +202,7 @@ def main(args):
                 io.save_checkpoint(args, model_without_ddp, optimizer, lr_scheduler, epoch)
 
         test_stats, evaluator = evaluate(
-            model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
+            model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir, epoch
         )
 
         if utils.is_main_process() and args.output_dir:
@@ -210,6 +210,11 @@ def main(args):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+
+    # save final model
+    if args.output_dir:
+        io.save_on_master(model_without_ddp, output_dir / "model_final.pth")
+
     print('Training time {}'.format(total_time_str))
 
 

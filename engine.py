@@ -3,6 +3,7 @@
 Train and eval functions used in main.py
 """
 import math
+import random
 import os
 import sys
 from typing import Iterable
@@ -14,6 +15,7 @@ from util.io import wandb_log_image
 from datasets.coco_eval import CocoEvaluator
 from datasets.panoptic_eval import PanopticEvaluator
 
+LOG_IDX = []  # Global list to make image logging consistent over epochs
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -66,7 +68,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 
 @torch.no_grad()
-def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, output_dir):
+def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, output_dir, log_step=0):
     model.eval()
     criterion.eval()
 
@@ -85,12 +87,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             output_dir=os.path.join(output_dir, "panoptic_eval"),
         )
 
-    # select 50 random images to visualize
     dataset = data_loader.dataset
     classes = {cat["id"]: cat["name"] for cat in dataset.coco.dataset["categories"]}
-    perm = torch.randperm(len(dataset))[:50].tolist()
-    vis_idx = torch.tensor(dataset.ids)[perm].tolist()
-
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
@@ -114,14 +112,19 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         results = postprocessors['bbox'](outputs, orig_target_sizes)
 
         # log images to wandb
-        if output_dir:
+        if output_dir and utils.is_main_process():
             for tar, logits, boxes in zip(targets, outputs["pred_logits"], outputs["pred_boxes"]):
-                if tar["image_id"] in vis_idx and utils.is_main_process():
-                    pred = {"pred_logits": logits, "pred_boxes": boxes}
-                    name = dataset.coco.imgs[tar["image_id"].item()]["file_name"]
-                    path = os.path.join(dataset.root, name)
-                    tag = tar["image_id"]
-                    wandb_log_image(classes, path, tar, pred, str(tag.item()))
+                pred = {"pred_logits": logits, "pred_boxes": boxes}
+                name = dataset.coco.imgs[tar["image_id"].item()]["file_name"]
+                path = os.path.join(dataset.root, name)
+
+                if len(LOG_IDX) == 50:
+                    if tar["image_id"] in LOG_IDX:
+                        wandb_log_image(classes, path, tar, pred, log_step)
+
+                elif random.random() < 0.1:
+                    LOG_IDX.append(tar["image_id"])
+                    wandb_log_image(classes, path, tar, pred, log_step)
 
         if 'segm' in postprocessors.keys():
             target_sizes = torch.stack([t["size"] for t in targets], dim=0)
@@ -139,9 +142,6 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
                 res_pano[i]["file_name"] = file_name
 
             panoptic_evaluator.update(res_pano)
-
-    # storage = metric_logger.storage
-    # for img, tar, logits, boxes in zip(storage["images"], storage["targets"], storage["results"], storage["logits"], storage["boxes"]):
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
