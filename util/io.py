@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import wandb
 from PIL import Image
 from util.misc import is_main_process
+from torchvision.transforms import ToTensor
+from datasets.transforms import resize
 
 
 def save_on_master(*args, **kwargs):
@@ -67,11 +69,13 @@ def load_frozen(args, model):
     model.detr.load_state_dict(checkpoint['model'])
 
 
-def wandb_log_image(classes, img_path, target, preds, step):
+def create_wandb_img(classes, img_path, target, preds):
 
     prob = F.softmax(preds["pred_logits"], -1)
     scores, labels = prob[..., :-1].max(-1)
     img = Image.open(img_path)
+
+    img = ToTensor()(resize(img, size=(800, 1333), target=None)[0])
 
     boxes_data = []
     for sc, cl, (cx, cy, width, height) in zip(scores.tolist(), labels.tolist(), preds["pred_boxes"].tolist()):
@@ -84,10 +88,11 @@ def wandb_log_image(classes, img_path, target, preds, step):
 
         gt_data.append({"position": {"middle": (cx, cy), "width": width, "height": height},
                         "box_caption": f"{classes[cl]}",
-                        "class_id": cl})
+                        "class_id": cl, "scores": {"score": 1.0}})
 
     boxes = {"predictions": {"box_data": boxes_data, "class_labels": classes}}
     boxes["ground_truth"] = {"box_data": gt_data, "class_labels": classes}
 
-    img = wandb.Image(img, boxes=boxes)
-    wandb.log({"Image: " + str(target["image_id"].item()): img}, step=step)
+    img = wandb.Image(img, boxes=boxes, caption="Image: " + str(target["image_id"].item()))
+
+    return img
