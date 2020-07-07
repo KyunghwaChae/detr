@@ -94,6 +94,7 @@ def get_args_parser():
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--resume', default='', help='resume from checkpoint')
+    parser.add_argument('--finetune', default='', help='finetune from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--eval', action='store_true')
@@ -174,6 +175,9 @@ def main(args):
     output_dir = Path(args.output_dir)
     if args.resume:
         io.resume(args, model_without_ddp, optimizer, lr_scheduler)
+
+    elif args.finetune:
+        io.finetune(args, model_without_ddp)
 
     if args.eval:
 
