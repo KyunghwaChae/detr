@@ -1,11 +1,17 @@
 import os
+import random
+import math
 import torch
 import torch.nn.functional as F
 import wandb
 from PIL import Image
 from util.misc import is_main_process
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
 from torchvision.transforms import ToTensor
 from datasets.transforms import resize
+from util.box_ops import rescale_bboxes
 
 
 def save_on_master(*args, **kwargs):
@@ -29,8 +35,10 @@ def log_wandb(train_stats, test_stats):
         test_stats[k] = v
     test_stats.pop("coco_eval_bbox")
 
-    log_train = {f'train_{k}': v for k, v in train_stats.items()}
-    log_test = {f'test_{k}': v for k, v in test_stats.items()}
+    ignore = ["unscaled", "0", "1", "2", "3", "4", "train_lr"]
+
+    log_train = {f'train_{k}': v for k, v in train_stats.items() if not any(substr in k for substr in ignore) or "cardinality" in k}
+    log_test = {f'test_{k}': v for k, v in test_stats.items() if not any(substr in k for substr in ignore) or "cardinality" in k}
 
 
     wandb.log(log_train, commit=False)
@@ -83,13 +91,14 @@ def load_frozen(args, model):
     model.detr.load_state_dict(checkpoint['model'])
 
 
-def create_wandb_img(classes, img_path, target, preds):
+def create_wandb_img(classes, img_path, target, preds, att_map, f_map, dec_att):
 
     prob = F.softmax(preds["pred_logits"], -1)
     scores, labels = prob[..., :-1].max(-1)
     img = Image.open(img_path)
 
-    img = ToTensor()(resize(img, size=(800, 1333), target=None)[0])
+    # size for logging purposes
+    tensor_img = ToTensor()(resize(img, size=(1500, 1333), target=None)[0])
 
     boxes_data = []
     for sc, cl, (cx, cy, width, height) in zip(scores.tolist(), labels.tolist(), preds["pred_boxes"].tolist()):
@@ -107,6 +116,81 @@ def create_wandb_img(classes, img_path, target, preds):
     boxes = {"predictions": {"box_data": boxes_data, "class_labels": classes}}
     boxes["ground_truth"] = {"box_data": gt_data, "class_labels": classes}
 
-    img = wandb.Image(img, boxes=boxes, caption="Image: " + str(target["image_id"].item()))
+    wimg = wandb.Image(tensor_img, boxes=boxes, caption="Image: " + str(target["image_id"].item()))
 
-    return img
+    # resize to feedforward size
+    tensor_img = ToTensor()(resize(img, size=800, target=None, max_size=1333)[0])
+
+    # Taken from https://colab.research.google.com/github/facebookresearch/detr/blob/colab/notebooks/detr_attention.ipynb
+    # visualize encoder self attention
+    fact = 2 ** round(math.log2(tensor_img.shape[-1] / att_map.shape[-1]))
+
+    # how much was the original image upsampled before feeding it to the model
+    scale_y = img.height / tensor_img.shape[-2]
+    scale_x = img.width / tensor_img.shape[-1]
+
+    # visualize attention around gt's center
+    sample = random.sample(gt_data, 4)
+    idxs = [(int(data["position"]["middle"][1] * tensor_img.shape[-2]), int(data["position"]["middle"][0] * tensor_img.shape[-1])) for data in sample]
+    captions = [data["box_caption"] for data in gt_data[:4]]
+    colors = ['lime', 'deepskyblue', 'orange', 'red']
+
+    fig = plt.figure(constrained_layout=True, figsize=(25 * 0.7, 8.5 * 0.7))
+    gs = fig.add_gridspec(2, 4)
+    axs = [
+        fig.add_subplot(gs[0, 0]),
+        fig.add_subplot(gs[1, 0]),
+        fig.add_subplot(gs[0, -1]),
+        fig.add_subplot(gs[1, -1]),
+    ]
+
+    for idx_o, ax, col, caption in zip(idxs, axs, colors, captions):
+        idx = ((idx_o[0] // fact), idx_o[1] // fact)
+        ax.imshow(att_map[..., idx[0], idx[1]], cmap='cividis', interpolation='nearest')
+        ax.axis('off')
+        ax.set_title(f'self-attention: {col} ({caption})')
+
+    fcenter_ax = fig.add_subplot(gs[:, 1:-1])
+    fcenter_ax.imshow(img)
+
+    for (y, x), col in zip(idxs, colors):
+        x = ((x // fact) + 0.5) * fact
+        y = ((y // fact) + 0.5) * fact
+        fcenter_ax.add_patch(plt.Circle((x * scale_x, y * scale_y), fact // 4, color=col))
+        fcenter_ax.axis('off')
+
+    self_att = wandb.Image(fig, caption="Image: " + str(target["image_id"].item()))
+
+    h, w = f_map.shape[-2:]
+
+    # select 4 highest scores
+    keep = torch.sort(scores, 0, descending=True)[1][:4]
+
+    bboxes_scaled = rescale_bboxes(preds["pred_boxes"][keep].cpu(), (img.width, img.height))
+
+    fig = plt.figure(constrained_layout=True, figsize=(25 * 0.7, 8.5 * 0.7))
+    gs = fig.add_gridspec(2, 4)
+    axs = [
+        fig.add_subplot(gs[0, 0]),
+        fig.add_subplot(gs[1, 0]),
+        fig.add_subplot(gs[0, -1]),
+        fig.add_subplot(gs[1, -1]),
+    ]
+    for idx, ax, col in zip(keep, axs, colors):
+
+        ax.imshow(dec_att[0, idx].view(h, w))
+        ax.axis('off')
+        ax.set_title(f'Attention: {col} ({classes[labels[idx].item()]})')
+
+    fcenter_ax = fig.add_subplot(gs[:, 1:-1])
+    fcenter_ax.imshow(img)
+
+    for col, (xmin, ymin, xmax, ymax) in zip(colors, bboxes_scaled):
+        fcenter_ax.add_patch(plt.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
+                                    fill=False, color=col, linewidth=2))
+
+    att_map = wandb.Image(plt, caption="Image: " + str(target["image_id"].item()))
+    plt.close()
+
+
+    return wimg, self_att, att_map

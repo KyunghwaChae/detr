@@ -5,6 +5,11 @@ Utilities for bounding box manipulation and GIoU.
 import torch
 from torchvision.ops.boxes import box_area
 
+def rescale_bboxes(out_bbox, size):
+    img_w, img_h = size
+    b = box_cxcywh_to_xyxy(out_bbox)
+    b = b * torch.tensor([img_w, img_h, img_w, img_h], dtype=torch.float32)
+    return b
 
 def box_cxcywh_to_xyxy(x):
     x_c, y_c, w, h = x.unbind(-1)

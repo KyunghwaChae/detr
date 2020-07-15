@@ -70,6 +70,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
 @torch.no_grad()
 def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, output_dir, log_step=0):
+
     model.eval()
     criterion.eval()
 
@@ -91,12 +92,44 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
     dataset = data_loader.dataset
     classes = {cat["id"]: cat["name"] for cat in dataset.coco.dataset["categories"]}
 
-    wandb_imgs = []
+    wandb_imgs = {"images": [], "self_attention": [], "attention": []}
+
+    # Log every 50 steps and in step 0
+    log_this = output_dir and utils.is_main_process() and ((log_step + 1) % 50 == 0 or log_step == 0)
+    conv_features, enc_attn_weights, dec_attn_weights = [], [], []
+
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
+        log_image = False
+
+        if log_this:
+
+            if len(LOG_IDX) == 15:
+                if targets[0]["image_id"] in LOG_IDX:
+                    log_image = True
+
+            elif random.random() < 0.3 and len(targets[0]["labels"].tolist()) > 3:
+                LOG_IDX.append(targets[0]["image_id"])
+                log_image = True
+
+            if log_image:
+                # Taken from https://colab.research.google.com/github/facebookresearch/detr/blob/colab/notebooks/detr_attention.ipynb
+                hooks = [
+                    model.module.backbone[-2].register_forward_hook(
+                        lambda self, input, output: conv_features.append(output)
+                    ),
+                    model.module.transformer.encoder.layers[-1].self_attn.register_forward_hook(
+                        lambda self, input, output: enc_attn_weights.append(output[1])
+                    ),
+                    model.module.transformer.decoder.layers[-1].multihead_attn.register_forward_hook(
+                        lambda self, input, output: dec_attn_weights.append(output[1])
+    ),
+                ]
+
         outputs = model(samples)
+
         loss_dict = criterion(outputs, targets)
         weight_dict = criterion.weight_dict
 
@@ -114,23 +147,33 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         results = postprocessors['bbox'](outputs, orig_target_sizes)
 
-        # Gather images to log to wandb afterwards
-        if output_dir and utils.is_main_process():
-            for tar, logits, boxes in zip(targets, outputs["pred_logits"], outputs["pred_boxes"]):
+        # Gather images to log to wandb
+        if log_image:
 
-                if len(LOG_IDX) == 50:
-                    if tar["image_id"] in LOG_IDX:
-                        pred = {"pred_logits": logits, "pred_boxes": boxes}
-                        name = dataset.coco.imgs[tar["image_id"].item()]["file_name"]
-                        path = os.path.join(dataset.root, name)
-                        wandb_imgs.append(create_wandb_img(classes, path, tar, pred))
+            # get the HxW shape of the feature maps of the CNN
+            f_map = conv_features[-1]['0'].tensors.cpu()
+            shape = f_map.shape[-2:]
+            sattn = enc_attn_weights[-1][0].reshape(shape + shape).cpu()
+            dec_att = dec_attn_weights[-1].cpu()
 
-                elif random.random() < 0.1:
-                    LOG_IDX.append(tar["image_id"])
-                    pred = {"pred_logits": logits, "pred_boxes": boxes}
-                    name = dataset.coco.imgs[tar["image_id"].item()]["file_name"]
-                    path = os.path.join(dataset.root, name)
-                    wandb_imgs.append(create_wandb_img(classes, path, tar, pred))
+            target = targets[0]
+            logits = outputs["pred_logits"][0]
+            boxes = outputs["pred_boxes"][0]
+
+            pred = {"pred_logits": logits, "pred_boxes": boxes}
+            name = dataset.coco.imgs[target["image_id"].item()]["file_name"]
+            path = os.path.join(dataset.root, name)
+
+            img, self_attention, att_map = create_wandb_img(classes, path, target, pred, sattn, f_map, dec_att)
+            wandb_imgs["images"].append(img)
+            wandb_imgs["self_attention"].append(self_attention)
+            wandb_imgs["attention"].append(att_map)
+
+            # Free memory
+            del conv_features[-1]
+            del enc_attn_weights[-1]
+            for hook in hooks:
+                hook.remove()
 
         if 'segm' in postprocessors.keys():
             target_sizes = torch.stack([t["size"] for t in targets], dim=0)
@@ -149,8 +192,11 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
             panoptic_evaluator.update(res_pano)
 
-    if output_dir and utils.is_main_process():
-        wandb.log({"Images": wandb_imgs}, step=log_step)
+    # Log all images to wandb
+    if log_this:
+        wandb.log({"Images": wandb_imgs["images"]}, step=log_step)
+        wandb.log({"Self Attention": wandb_imgs["self_attention"]}, step=log_step)
+        wandb.log({"Attention": wandb_imgs["attention"]}, step=log_step)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()

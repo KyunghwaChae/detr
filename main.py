@@ -159,7 +159,7 @@ def main(args):
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
                                    collate_fn=utils.collate_fn, num_workers=args.num_workers)
-    data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
+    data_loader_val = DataLoader(dataset_val, batch_size=1, sampler=sampler_val,
                                  drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers)
 
     if args.dataset_file == "coco_panoptic":
@@ -180,6 +180,9 @@ def main(args):
         io.finetune(args, model_without_ddp)
 
     if args.eval:
+
+        if args.output_dir and utils.is_main_process():
+            io.init_wandb(args.dataset_file + "-detr-eval", model, args, n_parameters=n_parameters)
 
         test_stats, evaluator = evaluate(model, criterion, postprocessors,
                                               data_loader_val, base_ds, device, args.output_dir)

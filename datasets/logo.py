@@ -152,10 +152,10 @@ def build(image_set, args):
     }
 
     img_folder, ann_file, split_set = PATHS[image_set]
-    dataset = LogoDetection(img_folder, ann_file, split_set, make_transforms(image_set))
+    dataset = LogoDetection(img_folder, ann_file, split_set, make_transforms(image_set, args))
     return dataset
 
-def make_transforms(image_set):
+def make_transforms(image_set, args):
 
     normalize = T.Compose([
         T.ToTensor(),
