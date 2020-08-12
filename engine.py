@@ -151,7 +151,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         if log_image:
 
             # get the HxW shape of the feature maps of the CNN
-            f_map = conv_features[-1]['0'].tensors.cpu()
+            f_map = conv_features[-1]['3'].tensors.cpu()
             shape = f_map.shape[-2:]
             sattn = enc_attn_weights[-1][0].reshape(shape + shape).cpu()
             dec_att = dec_attn_weights[-1].cpu()
@@ -170,8 +170,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             wandb_imgs["attention"].append(att_map)
 
             # Free memory
-            del conv_features[-1]
-            del enc_attn_weights[-1]
+            del conv_features[:]
+            del enc_attn_weights[:]
             for hook in hooks:
                 hook.remove()
 

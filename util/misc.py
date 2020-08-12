@@ -426,3 +426,29 @@ def interpolate(input, size=None, scale_factor=None, mode="nearest", align_corne
         return _new_empty_tensor(input, output_shape)
     else:
         return torchvision.ops.misc.interpolate(input, size, scale_factor, mode, align_corners)
+
+
+def crop(input, size):
+
+    if isinstance(input, NestedTensor):
+        x, mask = input.decompose()
+
+    else:
+        x, mask = input, None
+
+    if x.shape[-2:] == size:
+        return [input]
+
+    tensor_crops = []
+    mask_crops = []
+    h, w = size
+
+    for obj, storage in zip([x, mask], [tensor_crops, mask_crops]):
+
+        if obj is not None:
+            storage.append(obj[..., :h//2, :w//2])
+            storage.append(obj[..., :h//2, w//2:])
+            storage.append(obj[..., h//2:, :w//2])
+            storage.append(obj[..., h//2:, w//2:])
+
+    return [NestedTensor(x, mask) for x, mask in zip(tensor_crops, mask_crops)] if mask_crops else tensor_crops

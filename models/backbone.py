@@ -11,7 +11,7 @@ from torch import nn
 from torchvision.models._utils import IntermediateLayerGetter
 from typing import Dict, List
 
-from util.misc import NestedTensor, is_main_process
+from util.misc import NestedTensor, is_main_process, crop
 
 from .position_encoding import build_position_encoding
 
@@ -57,17 +57,26 @@ class FrozenBatchNorm2d(torch.nn.Module):
 
 class BackboneBase(nn.Module):
 
-    def __init__(self, backbone: nn.Module, train_backbone: bool, num_channels: int, return_interm_layers: bool):
+    def __init__(self, backbone: nn.Module, train_backbone: bool, pyramid: List):
         super().__init__()
         for name, parameter in backbone.named_parameters():
             if not train_backbone or 'layer2' not in name and 'layer3' not in name and 'layer4' not in name:
                 parameter.requires_grad_(False)
-        if return_interm_layers:
-            return_layers = {"layer1": "0", "layer2": "1", "layer3": "2", "layer4": "3"}
-        else:
-            return_layers = {'layer4': "0"}
+
+        return_layers = {"layer1": "0", "layer2": "1", "layer3": "2", "layer4": "3"}
+
+        # keep only the layers specified in the feature pyramid
+        for k, v in list(return_layers.items()):
+            if int(v) not in pyramid:
+                return_layers.pop(k)
+
         self.body = IntermediateLayerGetter(backbone, return_layers=return_layers)
-        self.num_channels = num_channels
+
+        self.num_channels = []
+        # get num_channels for every pyramid level
+        for k in return_layers:
+            self.num_channels.append(self.body.__getattr__(k)[-1].conv3.out_channels)
+
 
     def forward(self, tensor_list: NestedTensor):
         xs = self.body(tensor_list.tensors)
@@ -84,13 +93,12 @@ class Backbone(BackboneBase):
     """ResNet backbone with frozen BatchNorm."""
     def __init__(self, name: str,
                  train_backbone: bool,
-                 return_interm_layers: bool,
-                 dilation: bool):
+                 dilation: bool,
+                 pyramid: List):
         backbone = getattr(torchvision.models, name)(
             replace_stride_with_dilation=[False, False, dilation],
             pretrained=is_main_process(), norm_layer=FrozenBatchNorm2d)
-        num_channels = 512 if name in ('resnet18', 'resnet34') else 2048
-        super().__init__(backbone, train_backbone, num_channels, return_interm_layers)
+        super().__init__(backbone, train_backbone, pyramid)
 
 
 class Joiner(nn.Sequential):
@@ -101,10 +109,14 @@ class Joiner(nn.Sequential):
         xs = self[0](tensor_list)
         out: List[NestedTensor] = []
         pos = []
+        h, w = xs['3'].tensors.shape[-2:]
         for name, x in xs.items():
-            out.append(x)
+            crops = crop(x, size=(h, w))
+            out += [x for x in crops]
+
             # position encoding
-            pos.append(self[1](x).to(x.tensors.dtype))
+            pos_crops = crop(self[1](x).to(x.tensors.dtype), size=(h, w))
+            pos += [pc for pc in pos_crops]
 
         return out, pos
 
@@ -112,8 +124,8 @@ class Joiner(nn.Sequential):
 def build_backbone(args):
     position_embedding = build_position_encoding(args)
     train_backbone = args.lr_backbone > 0
-    return_interm_layers = args.masks
-    backbone = Backbone(args.backbone, train_backbone, return_interm_layers, args.dilation)
+    pyramid = [0, 1, 2, 3] if args.masks else args.pyramid
+    backbone = Backbone(args.backbone, train_backbone, args.dilation, pyramid)
     model = Joiner(backbone, position_embedding)
     model.num_channels = backbone.num_channels
     return model

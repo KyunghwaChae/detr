@@ -35,7 +35,7 @@ def log_wandb(train_stats, test_stats):
         test_stats[k] = v
     test_stats.pop("coco_eval_bbox")
 
-    ignore = ["unscaled", "0", "1", "2", "3", "4", "train_lr"]
+    ignore = ["unscaled", "0", "1", "2", "3", "4", "lr"]
 
     log_train = {f'train_{k}': v for k, v in train_stats.items() if not any(substr in k for substr in ignore) or "cardinality" in k}
     log_test = {f'test_{k}': v for k, v in test_stats.items() if not any(substr in k for substr in ignore) or "cardinality" in k}
@@ -64,7 +64,7 @@ def resume(args, model, optimizer, lr_scheduler):
             args.resume, map_location='cpu', check_hash=True)
     else:
         checkpoint = torch.load(args.resume, map_location='cpu')
-    model.load_state_dict(checkpoint['model'])
+    model.load_state_dict(checkpoint['model'], strict=False)
     if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
         optimizer.load_state_dict(checkpoint['optimizer'])
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
@@ -132,7 +132,7 @@ def create_wandb_img(classes, img_path, target, preds, att_map, f_map, dec_att):
     # visualize attention around gt's center
     sample = random.sample(gt_data, 4)
     idxs = [(int(data["position"]["middle"][1] * tensor_img.shape[-2]), int(data["position"]["middle"][0] * tensor_img.shape[-1])) for data in sample]
-    captions = [data["box_caption"] for data in gt_data[:4]]
+    captions = [data["box_caption"] for data in sample]
     colors = ['lime', 'deepskyblue', 'orange', 'red']
 
     fig = plt.figure(constrained_layout=True, figsize=(25 * 0.7, 8.5 * 0.7))
