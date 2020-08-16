@@ -38,12 +38,8 @@ class DETR(nn.Module):
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
 
-        # projection for previous levels
-        for i, num_channels in enumerate(backbone.num_channels[:-1]):
-            self.__setattr__(f"py_proj{i}", nn.Conv2d(num_channels, hidden_dim, kernel_size=1))
-
-        # projection for the last level
-        self.input_proj = nn.Conv2d(backbone.num_channels[-1], hidden_dim, kernel_size=1)
+        # self.input_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
+        self.fpn_proj = nn.Conv2d(256, hidden_dim, kernel_size=1)
         self.backbone = backbone
         self.aux_loss = aux_loss
 
@@ -68,19 +64,13 @@ class DETR(nn.Module):
 
         outputs_classes = []
         outputs_coords = []
-        for i, (feature, position) in enumerate(zip(features[:-1], pos[:-1])):
+        for feature, position in zip(features, pos):
             src, mask = feature.decompose()
             assert mask is not None
-            hs = self.transformer(self.__getattr__("py_proj0")(src), mask, self.query_embed.weight, position)[0]
+            hs = self.transformer(self.fpn_proj(src), mask, self.query_embed.weight, position)[0]
+
             outputs_classes.append(self.class_embed(hs))
             outputs_coords.append(self.bbox_embed(hs).sigmoid())
-
-        src, mask = features[-1].decompose()
-        assert mask is not None
-        hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
-
-        outputs_classes.append(self.class_embed(hs))
-        outputs_coords.append(self.bbox_embed(hs).sigmoid())
 
         # "add" more queries
         outputs_class = torch.cat(outputs_classes, dim=2)

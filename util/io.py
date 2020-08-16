@@ -161,7 +161,6 @@ def create_wandb_img(classes, img_path, target, preds, att_map, f_map, dec_att):
 
     self_att = wandb.Image(fig, caption="Image: " + str(target["image_id"].item()))
 
-    h, w = f_map.shape[-2:]
 
     # select 4 highest scores
     keep = torch.sort(scores, 0, descending=True)[1][:4]
@@ -176,9 +175,11 @@ def create_wandb_img(classes, img_path, target, preds, att_map, f_map, dec_att):
         fig.add_subplot(gs[0, -1]),
         fig.add_subplot(gs[1, -1]),
     ]
+    h, w = f_map.shape[-2:]
+    # level = 3 if idx // 100 == 4 else 2
     for idx, ax, col in zip(keep, axs, colors):
 
-        ax.imshow(dec_att[0, idx].view(h, w))
+        ax.imshow(dec_att[0, idx % 100].view(h, w))
         ax.axis('off')
         ax.set_title(f'Attention: {col} ({classes[labels[idx].item()]})')
 
