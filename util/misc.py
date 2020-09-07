@@ -446,9 +446,9 @@ def crop(input, size):
     for obj, storage in zip([x, mask], [tensor_crops, mask_crops]):
 
         if obj is not None:
-            storage.append(obj[..., :h//2, :w//2])
-            storage.append(obj[..., :h//2, w//2:])
-            storage.append(obj[..., h//2:, :w//2])
-            storage.append(obj[..., h//2:, w//2:])
+            storage.append(obj[..., :h, :w])
+            storage.append(obj[..., :h, w:])
+            storage.append(obj[..., h:, :w])
+            storage.append(obj[..., h:, w:])
 
     return [NestedTensor(x, mask) for x, mask in zip(tensor_crops, mask_crops)] if mask_crops else tensor_crops

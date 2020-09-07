@@ -64,8 +64,17 @@ class DETR(nn.Module):
 
         outputs_classes = []
         outputs_coords = []
+        # src = torch.cat([feature.decompose()[0] for feature in features], 1)
+        # mask = torch.cat([feature.decompose()[1] for feature in features], 1)
+        # position = torch.cat([position for position in pos], 1)
+        # assert mask is not None
+        # hs = self.transformer(self.fpn_proj(src), mask, self.query_embed.weight, position)[0]
+        # outputs_class = self.class_embed(hs)
+        # outputs_coord = self.bbox_embed(hs).sigmoid()
+
         for feature, position in zip(features, pos):
             src, mask = feature.decompose()
+
             assert mask is not None
             hs = self.transformer(self.fpn_proj(src), mask, self.query_embed.weight, position)[0]
 
@@ -158,7 +167,6 @@ class SetCriterion(nn.Module):
         idx = self._get_src_permutation_idx(indices)
         src_boxes = outputs['pred_boxes'][idx]
         target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
-
         loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
 
         losses = {}

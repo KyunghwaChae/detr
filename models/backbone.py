@@ -118,11 +118,11 @@ class Joiner(nn.Sequential):
         h, w = xs['3'].tensors.shape[-2:]
         for name, x in xs.items():
             crops = crop(x, size=(h, w))
-            out += [x for x in crops]
+            out += crops
 
             # position encoding
             pos_crops = crop(self[1](x).to(x.tensors.dtype), size=(h, w))
-            pos += [pc for pc in pos_crops]
+            pos += pos_crops
 
         return out, pos
 
