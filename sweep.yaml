@@ -1,0 +1,111 @@
+project: openlogo-detr
+method: random
+metric:
+  goal: maximize
+  name: test_AP
+parameters:
+  backbone:
+    distribution: constant
+    value: resnet50
+  batch_size:
+    distribution: constant
+    value: 2
+  bbox_loss_coef:
+    distribution: int_uniform
+    max: 10
+    min: 3
+  clip_max_norm:
+    distribution: constant
+    value: 0.1
+  data_path:
+    distribution: constant
+    value: datasets/data/openlogo
+  dataset_file:
+    distribution: constant
+    value: openlogo
+  dec_layers:
+    distribution: constant
+    value: 6
+  device:
+    distribution: constant
+    value: cuda
+  dice_loss_coef:
+    distribution: int_uniform
+    max: 3
+    min: 1
+  dim_feedforward:
+    distribution: constant
+    value: 2048
+  dropout:
+    distribution: constant
+    value: 0.1
+  enc_layers:
+    distribution: constant
+    value: 6
+  eos_coef:
+    distribution: uniform
+    max: 0.2
+    min: 0.05
+  epochs:
+    distribution: constant
+    value: 50
+  finetune:
+    distribution: constant
+    value: https://dl.fbaipublicfiles.com/detr/detr-r50-e632da11.pth
+  giou_loss_coef:
+    distribution: int_uniform
+    max: 4
+    min: 1
+  hidden_dim:
+    distribution: constant
+    value: 256
+  lr:
+    distribution: uniform
+    max: 1e-04
+    min: 1e-06
+  lr_backbone:
+    distribution: uniform
+    max: 1e-05
+    min: 1e-07
+  nheads:
+    distribution: constant
+    value: 8
+  num_queries:
+    distribution: constant
+    value: 100
+  num_workers:
+    distribution: constant
+    value: 2
+  output_dir:
+    distribution: constant
+    value: output/logo/sweeps
+  position_embedding:
+    distribution: constant
+    value: sine
+  resume:
+    distribution: constant
+    value: ""
+  seed:
+    distribution: constant
+    value: 42
+  set_cost_bbox:
+    distribution: int_uniform
+    max: 10
+    min: 3
+  set_cost_class:
+    distribution: int_uniform
+    max: 3
+    min: 1
+  set_cost_giou:
+    distribution: int_uniform
+    max: 4
+    min: 1
+command:
+    - ${env}
+    - python
+    - "-m" 
+    - "torch.distributed.launch"
+    - "--nproc_per_node=8" 
+    - "--use_env"
+    - "main.py"
+    - ${args}
