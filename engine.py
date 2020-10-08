@@ -8,10 +8,12 @@ import os
 import sys
 from typing import Iterable
 import wandb
+import json
 
 import torch
 
 import util.misc as utils
+from util.plot_utils import plot_tide
 from util.io import create_wandb_img
 from datasets.coco_eval import CocoEvaluator
 from datasets.panoptic_eval import PanopticEvaluator
@@ -192,12 +194,6 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
             panoptic_evaluator.update(res_pano)
 
-    # Log all images to wandb
-    if log_this:
-        wandb.log({"Images": wandb_imgs["images"]}, step=log_step)
-        wandb.log({"Self Attention": wandb_imgs["self_attention"]}, step=log_step)
-        wandb.log({"Attention": wandb_imgs["attention"]}, step=log_step)
-
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
@@ -223,4 +219,16 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         stats['PQ_all'] = panoptic_res["All"]
         stats['PQ_th'] = panoptic_res["Things"]
         stats['PQ_st'] = panoptic_res["Stuff"]
+
+    if output_dir and utils.is_main_process():
+        json.dump(coco_evaluator.coco_results, open(os.path.join(output_dir, "predictions.json"), "w"))
+
+    # Log all images to wandb
+    if log_this:
+        plot_tide(output_dir, data_loader.dataset.ann_file)
+        wandb.log({"Images": wandb_imgs["images"]}, step=log_step)
+        wandb.log({"Self Attention": wandb_imgs["self_attention"]}, step=log_step)
+        wandb.log({"Attention": wandb_imgs["attention"]}, step=log_step)
+
+
     return stats, coco_evaluator

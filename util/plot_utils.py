@@ -2,6 +2,8 @@
 """
 Plotting utilities to visualize training logs.
 """
+import os
+import cv2
 import matplotlib.colors as mplc
 import numpy as np
 import torch
@@ -9,8 +11,23 @@ import pandas as pd
 from pathlib import Path
 import seaborn as sns
 import matplotlib.pyplot as plt
+from tidecv import TIDE, datasets
+import wandb
 
 from util.box_ops import box_cxcywh_to_xyxy
+
+def plot_tide(output_dir, gt_path):
+    tide = TIDE()
+    gt = datasets.COCO(gt_path)
+    results = datasets.COCOResult(os.path.join(output_dir, "predictions.json"))
+    for ann in results.annotations:
+        ann["mask"] = None
+
+    tide.evaluate(gt, results, mode=TIDE.BOX)
+    tide.summarize()
+    tide.plot(output_dir)
+    img = wandb.Image(cv2.imread(os.path.join(output_dir, "predictions_bbox_summary.png")))
+    wandb.log({"TIDE mAP Decomposition": img})
 
 
 def plot_logs(logs, fields=('class_error', 'loss_bbox_unscaled', 'mAP'), ewm_col=0):

@@ -35,7 +35,7 @@ def log_wandb(train_stats, test_stats):
         test_stats[k] = v
     test_stats.pop("coco_eval_bbox")
 
-    ignore = ["unscaled", "0", "1", "2", "3", "4", "lr"]
+    ignore = ["unscaled", "_0", "_1", "_2", "_3", "_4", "lr"]
 
     log_train = {f'train_{k}': v for k, v in train_stats.items() if not any(substr in k for substr in ignore) or "cardinality" in k}
     log_test = {f'test_{k}': v for k, v in test_stats.items() if not any(substr in k for substr in ignore) or "cardinality" in k}
