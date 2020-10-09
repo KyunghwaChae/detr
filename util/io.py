@@ -122,7 +122,6 @@ def create_wandb_img(classes, img_path, target, preds, att_map, shape, dec_att):
     tensor_img = ToTensor()(resize(img, size=800, target=None, max_size=1333)[0])
 
     # Taken from https://colab.research.google.com/github/facebookresearch/detr/blob/colab/notebooks/detr_attention.ipynb
-    # visualize encoder self attention
 
     # select 4 highest scores
     keep = torch.sort(scores, 0, descending=True)[1][:4]
@@ -145,6 +144,7 @@ def create_wandb_img(classes, img_path, target, preds, att_map, shape, dec_att):
         fig.add_subplot(gs[1, -1]),
     ]
 
+    # visualize encoder self attention
     coords = []
     num_q = dec_att[0].shape[-2]
     for idx_o, idx_q, ax, col in zip(boxes, keep, axs, colors):
@@ -170,7 +170,6 @@ def create_wandb_img(classes, img_path, target, preds, att_map, shape, dec_att):
         fcenter_ax.add_patch(plt.Circle((x * scale_x, y * scale_y), fact // 4, color=col))
         fcenter_ax.axis('off')
 
-    # plt.show()
     self_att = wandb.Image(fig, caption="Image: " + str(target["image_id"].item()))
 
     bboxes_scaled = rescale_bboxes(preds["pred_boxes"][keep].cpu(), (img.width, img.height))
@@ -200,7 +199,6 @@ def create_wandb_img(classes, img_path, target, preds, att_map, shape, dec_att):
                                     fill=False, color=col, linewidth=2))
 
     att_map = wandb.Image(plt, caption="Image: " + str(target["image_id"].item()))
-    # plt.show()
     plt.close()
 
 

@@ -5,4 +5,5 @@
 
 python -m torch.distributed.launch --nproc_per_node=1 --use_env main.py \
     --lr_drop 100 --epochs 150 --data_path datasets/data/coco --dataset_file coco \
-    --batch_size 2 --pyramid 3 2 --num_queries 20
+    --batch_size 1 --fpn --num_queries 20 --output_dir output/coco/fpn_20q/checkpoint0099.pth
+

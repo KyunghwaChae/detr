@@ -24,6 +24,7 @@ class CocoEvaluator(object):
         assert isinstance(iou_types, (list, tuple))
         coco_gt = copy.deepcopy(coco_gt)
         self.coco_gt = coco_gt
+        self.coco_results = []
 
         self.iou_types = iou_types
         self.coco_eval = {}
@@ -56,6 +57,14 @@ class CocoEvaluator(object):
         for iou_type in self.iou_types:
             self.eval_imgs[iou_type] = np.concatenate(self.eval_imgs[iou_type], 2)
             create_common_coco_eval(self.coco_eval[iou_type], self.img_ids, self.eval_imgs[iou_type])
+
+        all_results = all_gather(self.coco_results)
+
+        merged_results = []
+        for p in all_results:
+            merged_results.extend(p)
+
+        self.coco_results = merged_results
 
     def accumulate(self):
         for coco_eval in self.coco_eval.values():
@@ -98,6 +107,7 @@ class CocoEvaluator(object):
                     for k, box in enumerate(boxes)
                 ]
             )
+        self.coco_results += coco_results
         return coco_results
 
     def prepare_for_coco_segmentation(self, predictions):
