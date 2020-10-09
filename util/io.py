@@ -185,9 +185,9 @@ def create_wandb_img(classes, img_path, target, preds, att_map, shape, dec_att):
     h, w = shape
     for idx, ax, col in zip(keep, axs, colors):
 
-        level = "3" if idx // 20 == 4 else "2"
+        level = "3" if idx // num_q == 4 else "2"
 
-        ax.imshow(dec_att[idx // 20][0, idx % 20].view(h, w))
+        ax.imshow(dec_att[idx // num_q][0, idx % num_q].view(h, w))
         ax.axis('off')
         ax.set_title(f'Attention level {level}: {col} ({classes[labels[idx].item()]})')
 
@@ -200,6 +200,16 @@ def create_wandb_img(classes, img_path, target, preds, att_map, shape, dec_att):
 
     att_map = wandb.Image(plt, caption="Image: " + str(target["image_id"].item()))
     plt.close()
+
+
+
+
+
+
+
+
+
+
 
 
     return wimg, self_att, att_map

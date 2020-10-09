@@ -26,8 +26,8 @@ def plot_tide(output_dir, gt_path):
     tide.evaluate(gt, results, mode=TIDE.BOX)
     tide.summarize()
     tide.plot(output_dir)
-    img = wandb.Image(cv2.imread(os.path.join(output_dir, "predictions_bbox_summary.png")))
-    wandb.log({"TIDE mAP Decomposition": img})
+
+    return wandb.Image(cv2.imread(os.path.join(output_dir, "predictions_bbox_summary.png")))
 
 
 def plot_logs(logs, fields=('class_error', 'loss_bbox_unscaled', 'mAP'), ewm_col=0):

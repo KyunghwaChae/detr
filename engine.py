@@ -4,6 +4,7 @@ Train and eval functions used in main.py
 """
 import math
 import random
+import json
 import os
 import sys
 from typing import Iterable
@@ -153,10 +154,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
             # get the HxW shape of the feature maps of the CNN
             f_map = conv_features[-1]
             shape = f_map['3'].tensors.cpu().shape[-2:]
-            sattn = enc_attn_weights[-1][0].reshape(shape + shape).cpu()
             dec_att = [dec_att.cpu() for dec_att in dec_attn_weights]
             sattn = [sattn[0].reshape(shape + shape).cpu() for sattn in enc_attn_weights]
-            # dec_att = dec_attn_weights[-1].cpu()
 
             target = targets[0]
             logits = outputs["pred_logits"][0]
@@ -226,7 +225,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
     # Log all images to wandb
     if log_this:
-        plot_tide(output_dir, data_loader.dataset.ann_file)
+        wandb.log({"TIDE mAP Decomposition": plot_tide(output_dir, data_loader.dataset.ann_file)}, step=log_step)
         wandb.log({"Images": wandb_imgs["images"]}, step=log_step)
         wandb.log({"Self Attention": wandb_imgs["self_attention"]}, step=log_step)
         wandb.log({"Attention": wandb_imgs["attention"]}, step=log_step)

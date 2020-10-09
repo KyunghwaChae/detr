@@ -450,7 +450,7 @@ def crop(input, size):
 
             if obj.shape[-1] / w != 2:
                 w2 -= 1
-            elif obj.shape[-2] / h != 2:
+            if obj.shape[-2] / h != 2:
                 h2 -= 1
 
             storage.append(obj[..., :h, :w])

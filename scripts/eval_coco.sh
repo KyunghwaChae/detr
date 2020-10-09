@@ -5,5 +5,5 @@
 
 python -m torch.distributed.launch --nproc_per_node=1 --use_env main.py --no_aux_loss \
     --data_path datasets/data/coco --dataset_file coco --batch_size 1 \
-    --eval --resume output/coco/base/model_final_new.pth \
+    --eval --resume output/coco/base/model_final.pth \
     --output_dir output/coco/base
