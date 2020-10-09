@@ -5,7 +5,6 @@ import random
 import time
 from pathlib import Path
 
-
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
@@ -39,7 +38,7 @@ def get_args_parser():
                         help="If true, we replace stride with dilation in the last convolutional block (DC5)")
     parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
                         help="Type of positional embedding to use on top of the image features")
-    parser.add_argument('--pyramid', default=[3], type=int, nargs="*")
+    parser.add_argument('--fpn', action="store_true", help="use fpn approach")
 
     # * Transformer
     parser.add_argument('--enc_layers', default=6, type=int,

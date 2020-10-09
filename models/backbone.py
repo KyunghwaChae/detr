@@ -58,31 +58,28 @@ class FrozenBatchNorm2d(torch.nn.Module):
 
 class BackboneBase(nn.Module):
 
-    def __init__(self, backbone: nn.Module, train_backbone: bool, pyramid: List, num_channels):
+    def __init__(self, backbone: nn.Module, train_backbone: bool, fpn: bool, num_channels):
         super().__init__()
         for name, parameter in backbone.named_parameters():
             if not train_backbone or 'layer2' not in name and 'layer3' not in name and 'layer4' not in name:
                 parameter.requires_grad_(False)
 
-        return_layers = {"layer1": "0", "layer2": "1", "layer3": "2", "layer4": "3"}
-        self.pyramid = pyramid
+        if fpn:
+            return_layers = {"layer1": "0", "layer2": "1", "layer3": "2", "layer4": "3"}
 
-        # keep only the layers specified in the feature pyramid
-        # for k, v in list(return_layers.items()):
-        #     if int(v) not in pyramid:
-        #         return_layers.pop(k)
+        else:
+            return_layers = {"layer4": "3"}
 
         self.body = IntermediateLayerGetter(backbone, return_layers=return_layers)
-        self.fpn = FPN(self.body)
+        if fpn:
+            self.body = FPN(self.body)
 
         self.num_channels = num_channels
 
 
     def forward(self, tensor_list: NestedTensor):
-        xs = self.fpn(tensor_list.tensors)
-        for k in list(xs.keys()):
-            if int(k) not in self.pyramid:
-                xs.pop(k)
+
+        xs = self.body(tensor_list.tensors)
 
         out: Dict[str, NestedTensor] = {}
         for name, x in xs.items():
@@ -99,12 +96,19 @@ class Backbone(BackboneBase):
     def __init__(self, name: str,
                  train_backbone: bool,
                  dilation: bool,
-                 pyramid: List):
+                 fpn: bool):
         backbone = getattr(torchvision.models, name)(
             replace_stride_with_dilation=[False, False, dilation],
             pretrained=is_main_process(), norm_layer=FrozenBatchNorm2d)
-        num_channels = 512 if name in ('resnet18', 'resnet34') else 2048
-        super().__init__(backbone, train_backbone, pyramid, num_channels)
+
+        if name in ('resnet18', 'resnet34'):
+            num_channels = 512
+        elif fpn:
+            num_channels = 256
+        else:
+            num_channels = 2048
+
+        super().__init__(backbone, train_backbone, fpn, num_channels)
 
 
 class Joiner(nn.Sequential):
@@ -130,8 +134,8 @@ class Joiner(nn.Sequential):
 def build_backbone(args):
     position_embedding = build_position_encoding(args)
     train_backbone = args.lr_backbone > 0
-    pyramid = [0, 1, 2, 3] if args.masks else args.pyramid
-    backbone = Backbone(args.backbone, train_backbone, args.dilation, pyramid)
+    backbone = Backbone(args.backbone, train_backbone, args.dilation, args.fpn)
     model = Joiner(backbone, position_embedding)
     model.num_channels = backbone.num_channels
+    model.fpn = args.fpn
     return model
